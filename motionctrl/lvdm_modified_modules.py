@@ -18,7 +18,7 @@ mainlogger = logging.getLogger('mainlogger')
 
 def TemporalTransformer_forward(self, x, context=None, is_imgbatch=False):
     b, c, t, h, w = x.shape #batch_size,num_channels,timestep,height,width
-    x_in = x
+    x_in = x # 复制输入日后残差链接或可用
     x = self.norm(x)
     x = rearrange(x, 'b c t h w -> (b h w) c t').contiguous() #张量重排，相比reshape可以按照维度改变数据顺序，contiguous()保证内存连续
     if not self.use_linear:
@@ -28,12 +28,16 @@ def TemporalTransformer_forward(self, x, context=None, is_imgbatch=False):
         x = self.proj_in(x)
 
     temp_mask = None
+    # t为时间步数
     if self.causal_attention:
-        temp_mask = torch.tril(torch.ones([1, t, t]))
+        # 假如使用因果注意力机制，使用下三角矩阵->一个时间点的输出只依赖于当前时间点的输入和之前时间点的输出
+        temp_mask = torch.tril(torch.ones([1, t, t])) #下三角矩阵
     if is_imgbatch:
+        # 假如输入为一批图像，使用单位矩阵->只关注于当前时间点的输入自身
         temp_mask = torch.eye(t).unsqueeze(0)
     if temp_mask is not None:
         mask = temp_mask.to(x.device)
+        # l i j是三个维度的指代；(l,i,j)->(l*b*h*w,i,j)
         mask = repeat(mask, 'l i j -> (l bhw) i j', bhw=b*h*w)
     else:
         mask = None
@@ -44,14 +48,19 @@ def TemporalTransformer_forward(self, x, context=None, is_imgbatch=False):
             x = block(x, context=context, mask=mask)
         x = rearrange(x, '(b hw) t c -> b hw t c', b=b).contiguous()
     else:
+        # (b*h*w,t,c)->(b,h*w,t,c)
         x = rearrange(x, '(b hw) t c -> b hw t c', b=b).contiguous()
+        # (b*t,l,con)->(b,t,l,con)
         context = rearrange(context, '(b t) l con -> b t l con', t=t).contiguous()
         for i, block in enumerate(self.transformer_blocks):
             # calculate each batch one by one (since number in shape could not greater then 65,535 for some package)
             for j in range(b):
+                # unit_context (1,l,con)
                 unit_context = context[j][0:1]
+                # context_j (1*h*w,l,con)
                 context_j = repeat(unit_context, 't l con -> (t r) l con', r=(h * w)).contiguous()
                 ## note: causal mask will not applied in cross-attention case
+                # x[j] (h*w,t,c)
                 x[j] = block(x[j], context=context_j)
     
     if self.use_linear:
