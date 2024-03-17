@@ -17,10 +17,10 @@ mainlogger = logging.getLogger('mainlogger')
 
 
 def TemporalTransformer_forward(self, x, context=None, is_imgbatch=False):
-    b, c, t, h, w = x.shape
+    b, c, t, h, w = x.shape #batch_size,num_channels,timestep,height,width
     x_in = x
     x = self.norm(x)
-    x = rearrange(x, 'b c t h w -> (b h w) c t').contiguous()
+    x = rearrange(x, 'b c t h w -> (b h w) c t').contiguous() #张量重排，相比reshape可以按照维度改变数据顺序，contiguous()保证内存连续
     if not self.use_linear:
         x = self.proj_in(x)
     x = rearrange(x, 'bhw c t -> bhw t c').contiguous()
