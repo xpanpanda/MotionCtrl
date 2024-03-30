@@ -31,13 +31,15 @@ DEFAULT_NEGATIVE_PROMPT = 'blur, haze, deformed iris, deformed pupils, semi-real
 post_prompt = 'Ultra-detail, masterpiece, best quality, cinematic lighting, 8k uhd, dslr, soft lighting, film grain, Fujifilm XT3'
 
 
-def load_model_checkpoint(model, ckpt, adapter_ckpt=None):
+def load_model_checkpoint(model, ckpt, adapter_ckpt=None): #待加载的model实例，模型检查点文件的路径，适配器检查点文件的路径
     if adapter_ckpt:
         ## main model
-        state_dict = torch.load(ckpt, map_location="cpu")
+        state_dict = torch.load(ckpt, map_location="cpu") #加载检查点
+        # 标准的pytorch状态字典
         if "state_dict" in list(state_dict.keys()):
             state_dict = state_dict["state_dict"]
             result = model.load_state_dict(state_dict, strict=False)
+        # deepspeed状态字典
         else:       
             # deepspeed
             new_pl_sd = OrderedDict()
@@ -74,6 +76,9 @@ def load_trajs(cond_dir, trajs):
     traj_name = []
 
     for idx in range(len(traj_files)):
+        # /path/to/trajectories/motion Trajectory 01.npy 
+        # motion Trajectory 01.npy 
+        # motion Trajectory 01
         traj_name.append(traj_files[idx].split('/')[-1].split('.')[0])
         data_list.append(torch.tensor(np.load(traj_files[idx])).permute(3, 0, 1, 2).float()) # [t,h,w,c] -> [c,t,h,w]
     
@@ -103,20 +108,20 @@ def save_results(samples, filename, savedir, fps=10):
     ## save prompt
 
     ## save video
-    videos = [samples]
-    savedirs = [savedir]
+    videos = [samples] #samples是一个pytorch张量，包含了视频的帧数据
+    savedirs = [savedir] # 创建一个包含保存视频目录的列表
     for idx, video in enumerate(videos):
         if video is None:
             continue
         # b,c,t,h,w
-        video = video.detach().cpu()
+        video = video.detach().cpu() #gpu到cpu，并与计算图分离
         video = torch.clamp(video.float(), -1., 1.)
-        n = video.shape[0]
-        video = video.permute(2, 0, 1, 3, 4) # t,n,c,h,w
-        frame_grids = [torchvision.utils.make_grid(framesheet, nrow=int(n)) for framesheet in video] #[3, 1*h, n*w]
+        n = video.shape[0] # 视频帧的数量
+        video = video.permute(2, 0, 1, 3, 4) # t,b,c,h,w
+        frame_grids = [torchvision.utils.make_grid(framesheet, nrow=int(n)) for framesheet in video] #[3, 1*h, n*w]为每一帧创建一个网格
         grid = torch.stack(frame_grids, dim=0) # stack in temporal dim [t, 3, n*h, w]
-        grid = (grid + 1.0) / 2.0
-        grid = (grid * 255).to(torch.uint8).permute(0, 2, 3, 1)
+        grid = (grid + 1.0) / 2.0 # 从[-1,1]到[0,1]
+        grid = (grid * 255).to(torch.uint8).permute(0, 2, 3, 1) # 从[0,1]到[0,255]
         path = os.path.join(savedirs[idx], "%s.mp4"%filename)
         torchvision.io.write_video(path, grid, fps=fps, video_codec='h264', options={'crf': '10'})
 
@@ -153,7 +158,7 @@ def motionctrl_sample(
     else:
         traj_features = None
 
-    if unconditional_guidance_scale != 1.0:
+    if unconditional_guidance_scale != 1.0:# 想要应用无条件引导-》增加随机性和多样性
         # prompts = batch_size * [""]
         prompts = batch_size * [DEFAULT_NEGATIVE_PROMPT]
         uc = model.get_learned_conditioning(prompts)
@@ -213,11 +218,11 @@ def run_inference(args, gpu_num, gpu_no):
     os.makedirs(savedir, exist_ok=True)
 
     if args.condtype == 'camera_motion':
-        prompt_list = cmcm_prompt_camerapose['prompts']
+        prompt_list = cmcm_prompt_camerapose['prompts'] # 提取prompt
         camera_pose_list, pose_name = load_camera_pose(args.cond_dir, cmcm_prompt_camerapose['camera_poses'])
         traj_list = None
         save_name_list = []
-        for i in range(len(pose_name)):
+        for i in range(len(pose_name)): # 循环遍历prompt和pose列表中的名称，将对应的组合构建一个保存名称-》相当于标注label的感觉
             save_name_list.append(f"{pose_name[i]}__{prompt_list[i].replace(' ', '_').replace(',', '')}")
     elif args.condtype == 'object_motion':
         prompt_list = omom_prompt_traj['prompts']
@@ -245,7 +250,8 @@ def run_inference(args, gpu_num, gpu_no):
     save_name_list_rank = [save_name_list[i] for i in indices]
     
     start = time.time() 
-    for idx, indice in tqdm(enumerate(range(0, len(prompt_list_rank), args.bs)), desc='Sample Batch'):
+    for idx, indice in tqdm(enumerate(range(0, len(prompt_list_rank), args.bs)), desc='Sample Batch'):# tqdm创建一个进度条
+        # bs是batch_size，接下来都是将各个数据分割成一个小批量
         prompts = prompt_list_rank[indice:indice+args.bs]
         camera_poses = None if camera_pose_list_rank is None else camera_pose_list_rank[indice:indice+args.bs]
         trajs = None if traj_list_rank is None else traj_list_rank[indice:indice+args.bs]
@@ -312,7 +318,7 @@ def save_images(samples, savedir):
 
         for j in range(t):
             img = samples[i,:,j,:,:]
-            img = np.transpose(img, (1,2,0))
+            img = np.transpose(img, (1,2,0)) # 通道数放在第三维度
             img = img[:,:,::-1] # BGR to RGB
             path = os.path.join(cur_outdir, f'{j:04d}.png')
             cv2.imwrite(path, img)
