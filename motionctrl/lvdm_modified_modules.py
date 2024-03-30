@@ -21,10 +21,14 @@ def TemporalTransformer_forward(self, x, context=None, is_imgbatch=False):
     x_in = x # 复制输入日后残差链接或可用
     x = self.norm(x)
     x = rearrange(x, 'b c t h w -> (b h w) c t').contiguous() #张量重排，相比reshape可以按照维度改变数据顺序，contiguous()保证内存连续
+    # 卷积层
     if not self.use_linear:
+        # 输入（bhw,c,t）输出（）
         x = self.proj_in(x)
     x = rearrange(x, 'bhw c t -> bhw t c').contiguous()
+    # 线性层
     if self.use_linear:
+        # 输入(bhw,t,c)
         x = self.proj_in(x)
 
     temp_mask = None
@@ -146,7 +150,7 @@ def temporal_selfattn_forward_BasicTransformerBlock(self, x, context=None, mask=
     else:
         pose_emb = None
         context = None
-
+    # x(B*hw, T, c)
     x = self.attn1(self.norm1(x), context=context if self.disable_self_attn else None, mask=mask) + x
 
     # Add camera pose
@@ -154,7 +158,7 @@ def temporal_selfattn_forward_BasicTransformerBlock(self, x, context=None, mask=
         B, t, _, _ = pose_emb.shape # [B, video_length, pose_dim, pose_embedding_dim]
         hw = x.shape[0] // B
         pose_emb = pose_emb.reshape(B, t, -1)
-        pose_emb = pose_emb.repeat_interleave(repeats=hw, dim=0)
+        pose_emb = pose_emb.repeat_interleave(repeats=hw, dim=0) #(B*hw, T,  pose_dim*pose_embedding_dim)
         x = self.cc_projection(torch.cat([x, pose_emb], dim=-1))
 
     x = self.attn2(self.norm2(x), context=context, mask=mask) + x
