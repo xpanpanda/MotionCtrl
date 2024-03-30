@@ -25,10 +25,12 @@ def read_points(file, video_len=16, reverse=False):
         x, y = line.strip().split(',')
         points.append((int(x), int(y)))
     if reverse:
+        # 将列表反向
         points = points[::-1]
 
     if len(points) > video_len:
         skip = len(points) // video_len
+        # 每隔skip取一个点
         points = points[::skip]
     points = points[:video_len]
     
@@ -37,6 +39,7 @@ def read_points(file, video_len=16, reverse=False):
 def get_provided_traj(traj_name):
     traj = read_points(PROVIDED_TRAJS[traj_name])
     # xrange from 256 to 1024
+    # 缩放点坐标
     traj = [[int(1024*x/256), int(1024*y/256)] for x,y in traj]
     return traj
 
@@ -44,24 +47,27 @@ blur_kernel = bivariate_Gaussian(99, 10, 10, 0, grid=None, isotropic=True)
 
 def process_points(points):
     frames = 16
-    defualt_points = [[512,512]]*16
+    defualt_points = [[512,512]]*16 # 笑死了default
 
     if len(points) < 2:
         return defualt_points
     elif len(points) >= frames:
         skip = len(points)//frames
+        # 挑选前15帧skip过的points和最后一个point
         return points[::skip][:15] + points[-1:]
     else:
+        # 
         insert_num = frames - len(points)
         insert_num_dict = {}
         interval = len(points) - 1
-        n = insert_num // interval
-        m = insert_num % interval
-        for i in range(interval):
-            insert_num_dict[i] = n
-        for i in range(m):
+        n = insert_num // interval  # 每个间隔之间平均要插多少点
+        m = insert_num % interval   # 多余的部分插多少点
+        # 尽量平均位置的插值
+        for i in range(interval): # 遍历每个间隔，在间隔出插入n个点
+            insert_num_dict[i] = n 
+        for i in range(m): # 在前m个间隔多插入1个点
             insert_num_dict[i] += 1
-
+        
         res = []
         for i in range(interval):
             insert_points = []
@@ -71,11 +77,11 @@ def process_points(points):
             delta_x = x1 - x0
             delta_y = y1 - y0
             for j in range(insert_num_dict[i]):
-                x = x0 + (j+1)/(insert_num_dict[i]+1)*delta_x
+                x = x0 + (j+1)/(insert_num_dict[i]+1)*delta_x # 平均的取点
                 y = y0 + (j+1)/(insert_num_dict[i]+1)*delta_y
                 insert_points.append([int(x), int(y)])
 
-            res += points[i:i+1] + insert_points
+            res += points[i:i+1] + insert_points # points[i:i+1]中只有point[i]，便于列表相加
         res += points[-1:]
         return res
 
@@ -84,10 +90,13 @@ def get_flow(points, video_len=16):
     for i in range(video_len-1):
         p = points[i]
         p1 = points[i+1]
-        optical_flow[i+1, p[1], p[0], 0] = p1[0] - p[0]
+        # 计算相邻帧之间的delta_x,delta_y
+        optical_flow[i+1, p[1], p[0], 0] = p1[0] - p[0] 
         optical_flow[i+1, p[1], p[0], 1] = p1[1] - p[1]
     for i in range(1, video_len):
         optical_flow[i] = cv2.filter2D(optical_flow[i], -1, blur_kernel)
+    # 它使用二维卷积核（blur_kernel）对每一帧的光流进行平滑处理。
+    # 这种平滑处理有助于减少光流估计中的噪声和不连续性，从而提高光流的质量和准确性。
 
 
     return optical_flow
