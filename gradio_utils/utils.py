@@ -2,37 +2,40 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-def vis_camera(RT_list, rescale_T=1):
+def vis_camera(RT_list, rescale_T=1): # 含有多个camera pose的列表+缩放引自
     fig = go.Figure()
     showticklabels = True
-    visible = True
-    scene_bounds = 2
-    base_radius = 2.5
-    zoom_scale = 1.5
-    fov_deg = 50.0
+    visible = True # 可见性
+    scene_bounds = 2 # 边界
+    base_radius = 2.5 # 基础半径
+    zoom_scale = 1.5 # 缩放比例
+    fov_deg = 50.0 # 视场角
     
-    edges = [(0, 1), (0, 2), (0, 3), (1, 2), (2, 3), (3, 1), (3, 4)] 
+    edges = [(0, 1), (0, 2), (0, 3), (1, 2), (2, 3), (3, 1), (3, 4)] # 边缘链接
     
-    colors = px.colors.qualitative.Plotly
+    colors = px.colors.qualitative.Plotly # 颜色列表
     
     cone_list = []
     n = len(RT_list)
     for i, RT in enumerate(RT_list):
         R = RT[:,:3]
         T = RT[:,-1]/rescale_T
-        cone = calc_cam_cone_pts_3d(R, T, fov_deg)
-        cone_list.append((cone, (i*1/n, "green"), f"view_{i}"))
+        cone = calc_cam_cone_pts_3d(R, T, fov_deg) # 计算给定旋转和缩放后的视锥顶点
+        cone_list.append((cone, (i*1/n, "green"), f"view_{i}")) # 将视锥顶点、颜色和图例标签添加到 cone_list 中
 
     
     for (cone, clr, legend) in cone_list:
         for (i, edge) in enumerate(edges):
+            # 对于视锥的每条边提取对应的顶点坐标
             (x1, x2) = (cone[edge[0], 0], cone[edge[1], 0])
             (y1, y2) = (cone[edge[0], 1], cone[edge[1], 1])
             (z1, z2) = (cone[edge[0], 2], cone[edge[1], 2])
+            # 添加一条线段，表示视锥的边缘，设置颜色和线宽，并根据是否是第一个视锥来决定是否显示图例。
             fig.add_trace(go.Scatter3d(
                 x=[x1, x2], y=[y1, y2], z=[z1, z2], mode='lines',
                 line=dict(color=clr, width=3),
                 name=legend, showlegend=(i == 0))) 
+    # 更新图形的布局，包括设置图形的高度，自动尺寸，边距，图例
     fig.update_layout(
                     height=500,
                     autosize=True,
@@ -77,20 +80,23 @@ def vis_camera(RT_list, rescale_T=1):
                     ))
     return fig
 
-
+# 世界坐标系到相机坐标系的变换矩阵
 def calc_cam_cone_pts_3d(R_W2C, T_W2C, fov_deg, scale=0.1, set_canonical=False, first_frame_RT=None):
-    fov_rad = np.deg2rad(fov_deg)
-    R_W2C_inv = np.linalg.inv(R_W2C)
+    fov_rad = np.deg2rad(fov_deg) # 视场角度转化为弧度制
+    R_W2C_inv = np.linalg.inv(R_W2C) 
 
     # Camera pose center:
-    T = np.zeros_like(T_W2C) - T_W2C
-    T = np.dot(R_W2C_inv, T)
+    T = np.zeros_like(T_W2C) - T_W2C #反平移
+    T = np.dot(R_W2C_inv, T) # 将相机坐标系转化为世界坐标系
     cam_x = T[0]
     cam_y = T[1]
     cam_z = T[2]
-    if set_canonical:
-        T = np.zeros_like(T_W2C)
+    if set_canonical: 
+        # 如果 set_canonical 为True，并且提供了 first_frame_RT，
+        # 则将相机位置设置为相对于第一帧相机姿态的坐标形式，再将其转换回世界坐标系
+        T = np.zeros_like(T_W2C) # 初始化一个长度为n的0向量
         T = np.dot(first_frame_RT[:,:3], T) + first_frame_RT[:,-1]
+        # 我不懂，上面两步明明就可以表示为一步T=first_frame_RT[:,-1]
         T = T - T_W2C 
         T = np.dot(R_W2C_inv, T)
         cam_x = T[0]
